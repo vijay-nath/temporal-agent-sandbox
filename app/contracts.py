@@ -134,4 +134,6 @@ class RunResult:
         sandbox: SandboxResult | None = None,
         code: str | None = None,
     ) -> RunResult:
-        return cls(run_id=run_id, status="failed", code=code, sandbox=sandbox, failure_reason=reason)
+        return cls(
+            run_id=run_id, status="failed", code=code, sandbox=sandbox, failure_reason=reason
+        )

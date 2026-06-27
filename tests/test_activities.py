@@ -50,7 +50,9 @@ def test_sandbox_result_ok():
 
 
 def test_sandbox_result_failure_classification():
-    nonzero = SandboxResult(runtime="runsc", exit_code=3, stdout_tail="", stderr_tail="x", wall_ms=5)
+    nonzero = SandboxResult(
+        runtime="runsc", exit_code=3, stdout_tail="", stderr_tail="x", wall_ms=5
+    )
     assert not nonzero.ok and nonzero.failure_reason == "nonzero_exit:3"
 
     oom = SandboxResult(
@@ -67,8 +69,12 @@ def test_sandbox_result_failure_classification():
 
 def test_summarize_success_vs_failure():
     p = pipeline.plan("hello")
-    ok = SandboxResult(runtime="runsc", exit_code=0, stdout_tail='{"x":1}', stderr_tail="", wall_ms=12)
+    ok = SandboxResult(
+        runtime="runsc", exit_code=0, stdout_tail='{"x":1}', stderr_tail="", wall_ms=12
+    )
     assert "completed" in pipeline.summarize(SummarizeArgs(plan=p, sandbox=ok))
 
-    bad = SandboxResult(runtime="runsc", exit_code=3, stdout_tail="", stderr_tail="boom", wall_ms=12)
+    bad = SandboxResult(
+        runtime="runsc", exit_code=3, stdout_tail="", stderr_tail="boom", wall_ms=12
+    )
     assert "failed" in pipeline.summarize(SummarizeArgs(plan=p, sandbox=bad))

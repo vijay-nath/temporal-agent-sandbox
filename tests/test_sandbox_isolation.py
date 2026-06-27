@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.config import get_settings
 from app.agents.codegen import generate_program
+from app.config import get_settings
 from app.contracts import ResourceLimits, RunSandboxArgs
 from app.sandbox.gvisor import GvisorRunner
 

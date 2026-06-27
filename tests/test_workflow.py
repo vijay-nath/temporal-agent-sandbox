@@ -46,7 +46,9 @@ def _ok_sandbox() -> SandboxResult:
 
 
 def _bad_sandbox() -> SandboxResult:
-    return SandboxResult(runtime="runsc", exit_code=3, stdout_tail="", stderr_tail="boom", wall_ms=5)
+    return SandboxResult(
+        runtime="runsc", exit_code=3, stdout_tail="", stderr_tail="boom", wall_ms=5
+    )
 
 
 def _make_sandbox_mock(result: SandboxResult):
@@ -81,7 +83,9 @@ async def test_happy_path_completes(env):
         env.client,
         task_queue=TASK_QUEUE,
         workflows=[AgentPipelineWorkflow],
-        activities=[plan_mock, generate_code_mock, _make_sandbox_mock(_ok_sandbox()), summarize_mock],
+        activities=[
+            plan_mock, generate_code_mock, _make_sandbox_mock(_ok_sandbox()), summarize_mock
+        ],
     ):
         result = await env.client.execute_workflow(
             AgentPipelineWorkflow.run, _run_input(wid), id=wid, task_queue=TASK_QUEUE
@@ -98,7 +102,9 @@ async def test_sandbox_failure_makes_workflow_fail_without_summarize(env):
         env.client,
         task_queue=TASK_QUEUE,
         workflows=[AgentPipelineWorkflow],
-        activities=[plan_mock, generate_code_mock, _make_sandbox_mock(_bad_sandbox()), summarize_mock],
+        activities=[
+            plan_mock, generate_code_mock, _make_sandbox_mock(_bad_sandbox()), summarize_mock
+        ],
     ):
         result = await env.client.execute_workflow(
             AgentPipelineWorkflow.run, _run_input(wid), id=wid, task_queue=TASK_QUEUE

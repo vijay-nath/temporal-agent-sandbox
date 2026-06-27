@@ -38,7 +38,12 @@ tracer = get_tracer()
 router = APIRouter()
 
 _TERMINAL = {"COMPLETED", "FAILED", "TIMED_OUT", "CANCELLED"}
-_SSE_EVENT = {"COMPLETED": "completed", "FAILED": "failed", "TIMED_OUT": "timed_out", "CANCELLED": "failed"}
+_SSE_EVENT = {
+    "COMPLETED": "completed",
+    "FAILED": "failed",
+    "TIMED_OUT": "timed_out",
+    "CANCELLED": "failed",
+}
 
 
 # --- helpers ----------------------------------------------------------------
@@ -164,7 +169,9 @@ async def _handle_already_started(client: Client, req: RunRequest, wid: str) -> 
     except Exception:  # noqa: BLE001 — memo unavailable → treat as idempotent replay
         stored = None
     if stored is not None and stored != expected:
-        raise APIError(409, "IDEMPOTENCY_CONFLICT", "idempotency key reused with a different payload")
+        raise APIError(
+            409, "IDEMPOTENCY_CONFLICT", "idempotency key reused with a different payload"
+        )
     return JSONResponse(
         status_code=200,
         content=RunAccepted(run_id=wid, status="PENDING", tenant_id=req.tenant_id).model_dump(),
@@ -221,7 +228,9 @@ async def create_run(req: RunRequest, request: Request) -> JSONResponse:
     )
 
 
-@router.get("/runs/{run_id}", response_model=RunStatusResponse, dependencies=[Depends(verify_token)])
+@router.get(
+    "/runs/{run_id}", response_model=RunStatusResponse, dependencies=[Depends(verify_token)]
+)
 async def get_run(run_id: str, request: Request) -> RunStatusResponse:
     return await _resolve_status(request.app.state.temporal, run_id)
 

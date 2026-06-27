@@ -48,7 +48,7 @@ async def _run_cmd(cmd: list[str], timeout: float = 15.0) -> tuple[int, bytes, b
     )
     try:
         out, err = await asyncio.wait_for(proc.communicate(), timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.kill()
         return 124, b"", b"control command timed out"
     return proc.returncode or 0, out, err
@@ -177,7 +177,9 @@ class GvisorRunner(SandboxRunner):
                     if wait_task in done:
                         break
                     if heartbeat:
-                        heartbeat({"phase": "running", "elapsed_ms": int((loop.time() - start) * 1000)})
+                        heartbeat(
+                            {"phase": "running", "elapsed_ms": int((loop.time() - start) * 1000)}
+                        )
             except asyncio.CancelledError:
                 # tear down the sandbox on cancellation, then propagate
                 await self.kill(args.run_id, attempt)
