@@ -1,0 +1,8 @@
+{
+  "_comment": "Reference only. `runsc install` (see install-runsc.sh) merges this into your /etc/docker/daemon.json. Shown here so the registration is auditable.",
+  "runtimes": {
+    "runsc": {
+      "path": "/usr/local/bin/runsc"
+    }
+  }
+}

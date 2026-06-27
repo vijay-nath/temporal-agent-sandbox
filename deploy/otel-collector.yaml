@@ -1,0 +1,37 @@
+# Receives OTLP from the API and worker and exports to Langfuse. Batches, redacts, and
+# decouples the app from the backend; add another exporter for Jaeger/Tempo.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+  # Strip payload attributes before export, so untrusted output never reaches the trace sink
+  # even if TRACE_PAYLOADS is enabled.
+  attributes/redact:
+    actions:
+      - key: output.preview
+        action: delete
+      - key: code.preview
+        action: delete
+
+exporters:
+  # Langfuse OTLP ingestion; Basic auth is base64("<public_key>:<secret_key>"), matching the
+  # LANGFUSE_INIT_PROJECT_* keys in docker-compose.yml.
+  otlphttp/langfuse:
+    endpoint: http://langfuse-web:3000/api/public/otel
+    headers:
+      Authorization: "Basic cGstbGYtMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDpzay1sZi0wMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAw"
+  debug:
+    verbosity: normal
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [attributes/redact, batch]
+      exporters: [otlphttp/langfuse, debug]

@@ -1,0 +1,229 @@
+# Local-first stack (run inside WSL2 Ubuntu). One command: `make up`.
+#
+# Planes:
+#   control: api (the only published app port), temporal, temporal-ui
+#   data:    worker + sibling gVisor sandboxes (worker is NOT published)
+#   obs:     otel-collector -> langfuse (+ clickhouse/redis/minio/postgres it needs)
+#
+# Prereqs handled by the Makefile: `make setup-gvisor` (host runsc) and `make sandbox-image`.
+
+# Shared Langfuse env (self-host v3). Keys/secrets are DEV defaults — do not use in prod.
+x-langfuse-env: &langfuse-env
+  DATABASE_URL: postgresql://postgres:postgres@langfuse-postgres:5432/postgres
+  SALT: "dev-salt-change-me"
+  ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+  NEXTAUTH_SECRET: "dev-nextauth-secret"
+  NEXTAUTH_URL: http://localhost:3000
+  TELEMETRY_ENABLED: "false"
+  LANGFUSE_INIT_ORG_ID: demo-org
+  LANGFUSE_INIT_ORG_NAME: Demo
+  LANGFUSE_INIT_PROJECT_ID: demo-project
+  LANGFUSE_INIT_PROJECT_NAME: agent-sandbox
+  LANGFUSE_INIT_PROJECT_PUBLIC_KEY: pk-lf-0000000000000000000000000000000000000000
+  LANGFUSE_INIT_PROJECT_SECRET_KEY: sk-lf-0000000000000000000000000000000000000000
+  LANGFUSE_INIT_USER_EMAIL: admin@example.com
+  LANGFUSE_INIT_USER_NAME: Admin
+  LANGFUSE_INIT_USER_PASSWORD: password123
+  CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+  CLICKHOUSE_URL: http://clickhouse:8123
+  CLICKHOUSE_USER: clickhouse
+  CLICKHOUSE_PASSWORD: clickhouse
+  CLICKHOUSE_CLUSTER_ENABLED: "false"
+  REDIS_CONNECTION_STRING: redis://default:myredissecret@redis:6379
+  LANGFUSE_S3_EVENT_UPLOAD_ENABLED: "true"
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_MEDIA_UPLOAD_ENABLED: "true"
+  LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+  LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+  LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+
+services:
+  # --- control plane: Temporal ---------------------------------------------
+  temporal-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+    volumes:
+      - temporal-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  temporal:
+    image: temporalio/auto-setup:1.25.2
+    depends_on:
+      temporal-postgres:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: temporal
+      POSTGRES_SEEDS: temporal-postgres
+    ports:
+      - "7233:7233"
+    healthcheck:
+      test: ["CMD", "tctl", "--address", "127.0.0.1:7233", "cluster", "health"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+  temporal-ui:
+    image: temporalio/ui:2.32.0
+    depends_on: [temporal]
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:8080
+    ports:
+      - "8080:8080"
+
+  # --- observability: OTel Collector + Langfuse ----------------------------
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.116.0
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otel/config.yaml:ro
+    depends_on: [langfuse-web]
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+
+  langfuse-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - langfuse-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "myredissecret"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "myredissecret", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:RELEASE.2024-09-13T20-26-02Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniosecret
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 0"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    depends_on:
+      langfuse-postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
+    environment:
+      <<: *langfuse-env
+
+  langfuse-web:
+    image: langfuse/langfuse:3
+    depends_on:
+      langfuse-postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
+    environment:
+      <<: *langfuse-env
+    ports:
+      - "3000:3000"
+
+  # --- the service: API (control) + worker (data) --------------------------
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.app
+    command: ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    env_file: [../.env]
+    depends_on:
+      temporal:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.app
+    command: ["python", "-m", "app.temporal.worker"]
+    env_file: [../.env]
+    environment:
+      # Host-shared staging dir so DooD sandbox bind mounts resolve on the host daemon.
+      SANDBOX_SHARE_DIR: /var/agent-sandbox
+    volumes:
+      # docker.sock grants host-root-equivalent access; acceptable only because the worker is
+      # trusted and not internet-facing. In prod the worker uses the K8s API instead (no socket).
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/agent-sandbox:/var/agent-sandbox
+    depends_on:
+      temporal:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  temporal-pg:
+  langfuse-pg:
+  clickhouse-data:
+  minio-data:
