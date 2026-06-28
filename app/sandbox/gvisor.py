@@ -43,9 +43,14 @@ _READ_CHUNK = 65536
 
 
 async def _run_cmd(cmd: list[str], timeout: float = 15.0) -> tuple[int, bytes, bytes]:
-    proc = await asyncio.create_subprocess_exec(
-        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+    except FileNotFoundError:
+        # docker CLI absent: treat as a non-zero result so preflight fails closed rather
+        # than letting FileNotFoundError escape (which would crash-loop / mis-classify retries).
+        return 127, b"", b"docker CLI not found on PATH"
     try:
         out, err = await asyncio.wait_for(proc.communicate(), timeout)
     except TimeoutError:

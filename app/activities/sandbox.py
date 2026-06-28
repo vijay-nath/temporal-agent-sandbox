@@ -58,6 +58,8 @@ async def run_sandbox(args: RunSandboxArgs) -> SandboxResult:
             },
         )
         try:
+            # fail closed: confirm the runtime is available before launching untrusted code
+            await runner.preflight()
             with tracer.start_as_current_span("sandbox.exec") as exec_span:
                 set_observation_type(exec_span, "tool")  # untrusted execution
                 set_attrs(exec_span, {"sandbox.runtime": args.runtime})

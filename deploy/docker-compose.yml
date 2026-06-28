@@ -74,7 +74,9 @@ services:
     ports:
       - "7233:7233"
     healthcheck:
-      test: ["CMD", "tctl", "--address", "127.0.0.1:7233", "cluster", "health"]
+      # Explicitly target the Temporal service endpoint for the health check.
+      # This avoids relying on the CLI's default localhost address inside the container.
+      test: ["CMD", "tctl", "--address", "temporal:7233", "cluster", "health"]
       interval: 10s
       timeout: 10s
       retries: 12
@@ -190,7 +192,8 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.app
-    command: ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    command:
+      ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     env_file: [../.env]
     depends_on:
       temporal:

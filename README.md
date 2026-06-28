@@ -46,14 +46,21 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design.
 
 ## Quick start
 
-gVisor's `runsc` runtime needs a Linux Docker daemon, so run everything inside WSL2 Ubuntu
-(or native Linux) with Docker Engine installed.
+gVisor's `runsc` runtime registers with the Docker daemon, so the simplest setup is **Docker
+Engine running natively in the Linux host** — `dockerd` inside your WSL2 Ubuntu distro, or a
+native Linux machine (`curl -fsSL https://get.docker.com | sh`). On **Docker Desktop (WSL2)**
+the daemon is managed separately and needs a couple of manual steps — see
+[Running on Docker Desktop (WSL2)](#running-on-docker-desktop-wsl2).
 
 ```bash
 cp .env.example .env          # set API_BEARER_TOKEN
-make setup-gvisor             # install and register the pinned runsc runtime (sudo)
+make setup-gvisor             # install + register the pinned runsc runtime (sudo)
+docker info | grep -i runsc   # verify runsc is now a registered runtime
 make up                       # build the sandbox image and start the stack
 ```
+
+If `runsc` is missing or unregistered, the worker fails closed by design — it refuses to start
+rather than run untrusted code under the shared-kernel `runc` runtime.
 
 Once up: the API is on `http://localhost:8000`, the Temporal Web UI on `:8080`, and Langfuse
 on `:3000` (`admin@example.com` / `password123`). `make demo` submits a run and streams it;
@@ -64,6 +71,21 @@ To exercise the isolation and failure paths, append a directive to the task —
 attempt egress, exit non-zero, loop forever, exhaust memory, fork-bomb, or flood stdout
 respectively. For example, `bash scripts/demo.sh "compute [net]"` shows the run failing
 because the sandbox has no network.
+
+### Running on Docker Desktop (WSL2)
+
+Docker Desktop runs its own daemon in a separate VM, so `make setup-gvisor` installs and registers
+`runsc` but cannot restart that daemon — it detects Docker Desktop, prints a notice, and exits
+successfully. Restart Docker Desktop yourself (tray/menu → Restart), then confirm the runtime
+before starting the stack:
+
+```bash
+docker info        # 'runsc' should appear under "Runtimes"
+```
+
+If `runsc` does not appear, Docker Desktop's daemon isn't using this distro's runtime; use a
+native Docker Engine inside WSL2 instead. Either way the worker stays fail-closed — no `runsc`,
+no run.
 
 ## API endpoints
 

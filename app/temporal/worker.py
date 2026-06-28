@@ -1,6 +1,6 @@
 """Worker process: hosts the workflow and activities and polls the task queue. Stateless —
-state lives in Temporal — and refuses to start if the configured sandbox runtime is
-unavailable."""
+state lives in Temporal. It starts even when the configured sandbox runtime is unavailable
+(logging an error); run_sandbox then fails closed per task instead of crash-looping."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from app.activities.sandbox import run_sandbox
 from app.config import get_settings
 from app.observability.logging import configure_logging
 from app.observability.tracing import setup_tracing
-from app.sandbox.runner import get_runner
+from app.sandbox.runner import SandboxPolicyViolation, get_runner
 from app.temporal.client import create_client
 from app.temporal.workflows import AgentPipelineWorkflow
 
@@ -26,8 +26,17 @@ async def main() -> None:
     configure_logging(f"{s.otel_service_name}-worker", s.log_level)
     setup_tracing(f"{s.otel_service_name}-worker", s.otel_exporter_otlp_endpoint)
 
-    # fail closed before serving any work
-    await get_runner(s.sandbox_runtime).preflight()
+    # Detect runtime availability for visibility, but do not crash: a missing sandbox runtime
+    # must not take down the worker. run_sandbox re-checks and fails closed per task.
+    try:
+        await get_runner(s.sandbox_runtime).preflight()
+        log.info("sandbox runtime available", extra={"sandbox_runtime": s.sandbox_runtime})
+    except SandboxPolicyViolation as e:
+        log.error(
+            "sandbox execution unavailable; run_sandbox will fail closed until resolved: %s",
+            e,
+            extra={"sandbox_runtime": s.sandbox_runtime},
+        )
 
     client = await create_client()
     worker = Worker(
